@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TaskDue — get the app</title>
+<meta name="description" content="TaskDue: a liquid-glass task, trip, and calendar planner. Get it for Windows, Mac, Android, or iPhone.">
+<meta name="theme-color" content="#15191a">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap">
+<style>
+:root{
+  --canvas:#15191a;
+  --fg:#ffffff; --fg-muted:#dcdedf; --fg-faint:#8a9094;
+  --primary:#ffffff; --on-primary:#0e1112;
+  --success:#73c892; --warning:#e8ad6a; --error:#f1a8a8;
+  --font-display:'Source Serif 4', ui-serif, Georgia, serif;
+  --font-body:'Satoshi', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --radius-md:16px; --radius-lg:24px; --radius-full:9999px;
+  /* deeper, glossier glass than the app itself — this is a showcase surface */
+  --glass-fill: rgba(255,255,255,0.055);
+  --glass-fill-strong: rgba(255,255,255,0.11);
+  --glass-border: rgba(255,255,255,0.16);
+  --glass-highlight: rgba(255,255,255,0.55);
+  --blur:26px;
+  --glow-shadow: 0 20px 60px -20px rgba(0,0,0,.6), 0 0 40px -12px rgba(255,255,255,.08), inset 0 1px 0 var(--glass-highlight);
+}
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html{ scroll-behavior:smooth; color-scheme:dark; }
+body{ margin:0; font-family:var(--font-body); background:var(--canvas); color:var(--fg); overflow-x:hidden; position:relative; }
+a{ color:inherit; text-decoration:none; }
+button{ font-family:inherit; background:none; border:none; cursor:pointer; appearance:none; -webkit-appearance:none; }
+img{ max-width:100%; display:block; }
+
+/* Ambient blob field, sits under the bots canvas */
+.field{ position:fixed; inset:0; z-index:-2; overflow:hidden; background:var(--canvas); }
+.field::before,.field::after{ content:''; position:absolute; border-radius:50%; filter:blur(110px); }
+.field::before{ width:60vmax; height:60vmax; top:-24vmax; right:-18vmax; background:radial-gradient(circle, rgba(217,217,217,0.14), transparent 70%); }
+.field::after{ width:55vmax; height:55vmax; bottom:-26vmax; left:-18vmax; background:radial-gradient(circle, rgba(115,200,146,0.10), transparent 70%); }
+
+/* Bots canvas — glowing blobs, repelled by pointer, sits above the static field, below content */
+#botsCanvas{ position:fixed; inset:0; z-index:-1; pointer-events:none; }
+#dotsCanvas{ position:fixed; inset:0; z-index:-1; pointer-events:none; }
+
+.wrap{ max-width:1080px; margin-inline:auto; padding-inline:clamp(20px,5vw,40px); }
+section{ padding:clamp(56px,10vh,110px) 0; }
+
+/* Nav */
+.nav{ position:sticky; top:0; z-index:50; backdrop-filter:blur(var(--blur)) saturate(180%); -webkit-backdrop-filter:blur(var(--blur)) saturate(180%);
+  background:rgba(21,25,26,.5); border-bottom:1px solid var(--glass-border); }
+.nav-inner{ max-width:1080px; margin-inline:auto; padding:14px clamp(20px,5vw,40px); display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.brand{ display:flex; align-items:center; gap:10px; font-family:var(--font-display); font-weight:600; font-size:18px; }
+.brand .mark{ width:30px; height:30px; border-radius:var(--radius-full);
+  background:radial-gradient(circle at 32% 28%, #ffffff 0%, #e9e9e9 60%, #d4d4d4 100%);
+  box-shadow:0 3px 10px rgba(0,0,0,.5), inset 0 1px 1px rgba(255,255,255,.9); display:grid; place-items:center; }
+.brand .mark svg{ width:16px; height:16px; }
+.nav-links{ display:flex; align-items:center; gap:28px; font-size:14px; font-weight:600; color:var(--fg-muted); }
+.nav-links a{ transition:transform .15s ease, text-shadow .15s ease, color .15s ease; display:inline-block; }
+.nav-links a:hover, .nav-links a.active{ color:var(--fg); }
+.nav-links a.active{ position:relative; }
+.nav-links a.active::after{ content:''; position:absolute; left:0; right:0; bottom:-6px; height:2px; border-radius:2px; background:var(--primary); box-shadow:0 0 8px rgba(255,255,255,.6); }
+.nav-cta{ padding:10px 20px; border-radius:var(--radius-full); background:var(--primary); color:var(--on-primary); font-weight:700; font-size:13.5px; box-shadow:0 6px 18px rgba(255,255,255,.18); transition:transform .15s ease, box-shadow .15s ease; }
+.nav-cta:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(255,255,255,.28); }
+@media (max-width:760px){ .nav-links{ display:none; } }
+
+/* Glass surfaces — glossy, with a real drop shadow for depth */
+.glass-card{ border-radius:var(--radius-lg); background:var(--glass-fill); border:1px solid var(--glass-border);
+  backdrop-filter:blur(var(--blur)) saturate(180%); -webkit-backdrop-filter:blur(var(--blur)) saturate(180%);
+  box-shadow:var(--glow-shadow); transition:transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.glass-card:hover{ transform:translateY(-3px); border-color:rgba(255,255,255,.28); }
+
+/* ---- Scroll reveal: cards drift in with a soft glow as they near the viewport,
+   and settle back down as they scroll away — reversible, not a one-shot intro. ---- */
+.reveal{
+  opacity:0;
+  transform:translateY(34px) scale(.94);
+  transition:opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1), box-shadow .7s ease;
+  transition-delay:var(--reveal-delay, 0s);
+}
+.reveal.in-view{
+  opacity:1;
+  transform:translateY(0) scale(1);
+}
+.reveal.glass-card.in-view{
+  animation: revealGlow 1s var(--reveal-delay, 0s) both cubic-bezier(.16,1,.3,1);
+}
+@keyframes revealGlow{
+  0%{ box-shadow:0 20px 60px -20px rgba(0,0,0,.6), 0 0 0px rgba(255,255,255,0), inset 0 1px 0 var(--glass-highlight); }
+  55%{ box-shadow:0 20px 60px -20px rgba(0,0,0,.6), 0 0 46px -6px rgba(255,255,255,.35), inset 0 1px 0 var(--glass-highlight); }
+  100%{ box-shadow:var(--glow-shadow); }
+}
+@media (prefers-reduced-motion: reduce){
+  .reveal{ transition:opacity .2s ease; transform:none !important; }
+  .reveal.glass-card.in-view{ animation:none; }
+}
+
+/* Section headers */
+.section-eyebrow{ font-size:12.5px; font-weight:700; color:var(--fg-faint); text-transform:uppercase; letter-spacing:.08em; margin:0 0 10px; }
+.section-title{ font-family:var(--font-display); font-weight:500; font-size:clamp(26px,4vw,36px); line-height:1.15; letter-spacing:-.02em; margin:0 0 14px; max-width:640px; }
+.section-sub{ font-size:15px; color:var(--fg-muted); max-width:560px; line-height:1.6; margin:0 0 44px; }
+
+.btn-primary{ padding:15px 30px; border-radius:var(--radius-full); background:var(--primary); color:var(--on-primary); font-weight:700; font-size:14.5px;
+  display:inline-flex; align-items:center; gap:9px; box-shadow:0 10px 30px -6px rgba(255,255,255,.25); transition:transform .15s ease, box-shadow .15s ease; }
+.btn-primary:hover{ transform:translateY(-2px); box-shadow:0 16px 40px -6px rgba(255,255,255,.35); }
+.btn-primary svg{ width:17px; height:17px; }
+.btn-ghost{ padding:15px 28px; border-radius:var(--radius-full); background:var(--glass-fill); border:1px solid var(--glass-border); color:var(--fg); font-weight:700; font-size:14.5px; transition:transform .15s ease, background .15s ease; }
+.btn-ghost:hover{ transform:translateY(-2px); background:var(--glass-fill-strong); }
+
+/* Footer */
+footer{ border-top:1px solid var(--glass-border); padding:44px 0 32px; position:relative; z-index:1; }
+.footer-grid{ display:flex; justify-content:space-between; flex-wrap:wrap; gap:32px; margin-bottom:32px; }
+.footer-links{ display:flex; gap:56px; flex-wrap:wrap; }
+.footer-links h5{ font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--fg-faint); margin:0 0 12px; }
+.footer-links a{ display:block; font-size:13.5px; color:var(--fg-muted); margin-bottom:9px; }
+.footer-links a:hover{ color:var(--fg); }
+.footer-bottom{ font-size:12px; color:var(--fg-faint); text-align:center; padding-top:24px; border-top:1px solid var(--glass-border); }
+.footer-bottom-row{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; padding-top:24px; border-top:1px solid var(--glass-border); }
+.footer-bottom-row .footer-bottom{ border:none; padding:0; text-align:left; }
+.footer-social{ display:flex; gap:10px; }
+.footer-social a{ width:34px; height:34px; border-radius:50%; display:grid; place-items:center; background:var(--glass-fill); border:1px solid var(--glass-border); color:var(--fg-muted); transition:transform .15s ease, color .15s ease, background .15s ease; }
+.footer-social a:hover{ transform:translateY(-2px); color:var(--fg); background:var(--glass-fill-strong); }
+.footer-social svg{ width:15px; height:15px; }
+@media (max-width:500px){ .footer-bottom-row{ justify-content:center; } .footer-bottom-row .footer-bottom{ text-align:center; width:100%; } }
+
+main{ position:relative; z-index:1; }
+
+/* Page hero (shared across Home/Downloads/Guide/Contact) */
+.page-hero{ padding-top:clamp(56px,10vh,100px); text-align:center; }
+.eyebrow-pill{ display:inline-flex; align-items:center; gap:8px; padding:7px 16px; border-radius:var(--radius-full);
+  background:var(--glass-fill); border:1px solid var(--glass-border); font-size:12.5px; font-weight:600; color:var(--fg-muted); margin-bottom:24px; }
+.eyebrow-pill .dot{ width:6px; height:6px; border-radius:50%; background:var(--success); box-shadow:0 0 8px rgba(115,200,146,.7); animation:dotPulse 2.4s ease-in-out infinite; }
+@keyframes dotPulse{ 0%,100%{ box-shadow:0 0 6px rgba(115,200,146,.5); opacity:.85; } 50%{ box-shadow:0 0 14px rgba(115,200,146,.9); opacity:1; } }
+.page-hero h1{ font-family:var(--font-display); font-weight:500; font-size:clamp(32px,6vw,54px); line-height:1.08; letter-spacing:-.02em; margin:0 0 18px; }
+.page-hero h1 em{ font-style:normal; color:var(--fg-muted); }
+.page-hero .sub{ font-size:clamp(15px,2vw,17px); color:var(--fg-muted); max-width:620px; margin:0 auto 30px; line-height:1.6; }
+
+@media (max-width:600px){ section{ padding:44px 0; } }
+
+/* Feature grid (Home) */
+.feature-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; }
+.feature-card{ padding:24px; }
+.feature-card .f-icon{ width:42px; height:42px; border-radius:var(--radius-full); background:rgba(255,255,255,.08); display:grid; place-items:center; margin-bottom:16px; }
+.feature-card .f-icon svg{ width:19px; height:19px; }
+.feature-card h3{ font-size:15.5px; font-weight:700; margin:0 0 8px; }
+.feature-card p{ font-size:13.5px; color:var(--fg-muted); line-height:1.55; margin:0; }
+
+/* Platform download cards (Home = latest only, Downloads = full history) */
+.platform-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
+.platform-card{ padding:28px 24px; display:flex; flex-direction:column; position:relative; overflow:hidden; }
+.platform-card .p-icon{ width:48px; height:48px; border-radius:var(--radius-full); background:rgba(255,255,255,.08); display:grid; place-items:center; margin-bottom:18px; }
+.platform-card .p-icon svg{ width:22px; height:22px; }
+.platform-card h3{ font-size:17px; font-weight:700; margin:0 0 6px; }
+.platform-card .p-sub{ font-size:12.5px; color:var(--fg-faint); margin:0 0 18px; }
+.platform-card .p-version{ font-size:11px; color:var(--fg-faint); margin:0 0 18px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.platform-card .p-version .vtag{ background:var(--glass-fill-strong); padding:2px 9px; border-radius:var(--radius-full); font-weight:700; color:var(--fg-muted); }
+.platform-card .p-download{ margin-top:auto; display:block; text-align:center; padding:12px; border-radius:var(--radius-full); background:var(--primary); color:var(--on-primary); font-weight:700; font-size:13.5px; box-shadow:0 8px 22px -4px rgba(255,255,255,.2); transition:transform .15s ease; }
+.platform-card .p-download:hover{ transform:translateY(-2px); }
+
+/* Downloads page: platform sections with per-version history rows */
+.version-list{ display:flex; flex-direction:column; gap:10px; margin-top:18px; }
+.version-row{ display:flex; align-items:flex-start; gap:14px; padding:16px 18px; border-radius:var(--radius-md); background:var(--glass-fill-strong); border:1px solid var(--glass-border); }
+.version-row.latest{ border-color:rgba(115,200,146,.4); }
+.version-row .v-badge{ font-size:11px; font-weight:700; padding:3px 10px; border-radius:var(--radius-full); background:var(--glass-fill); color:var(--fg-muted); flex:0 0 auto; }
+.version-row.latest .v-badge{ background:rgba(115,200,146,.16); color:var(--success); }
+.version-row .v-body{ flex:1; min-width:0; }
+.version-row .v-head{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:4px; }
+.version-row .v-num{ font-weight:700; font-size:14px; }
+.version-row .v-date{ font-size:11.5px; color:var(--fg-faint); }
+.version-row p{ font-size:13px; color:var(--fg-muted); margin:0; line-height:1.5; }
+.version-row .v-dl{ font-size:12px; font-weight:700; color:var(--fg); background:var(--glass-fill); border:1px solid var(--glass-border); padding:7px 14px; border-radius:var(--radius-full); flex:0 0 auto; white-space:nowrap; }
+.platform-section-head{ display:flex; align-items:center; gap:12px; margin-bottom:6px; }
+.platform-section-head .p-icon{ width:38px; height:38px; border-radius:var(--radius-full); background:rgba(255,255,255,.08); display:grid; place-items:center; }
+.platform-section-head .p-icon svg{ width:17px; height:17px; }
+.platform-section-head h3{ font-family:var(--font-display); font-size:20px; font-weight:500; margin:0; }
+
+/* Guide tabs */
+.guide-tabs{ display:flex; gap:8px; margin-bottom:28px; flex-wrap:wrap; }
+.guide-tab{ padding:9px 18px; border-radius:var(--radius-full); background:var(--glass-fill); border:1px solid var(--glass-border); font-size:13px; font-weight:600; color:var(--fg-muted); cursor:pointer; transition:transform .15s ease; }
+.guide-tab:hover{ transform:translateY(-1px); }
+.guide-tab.active{ background:var(--primary); color:var(--on-primary); }
+.guide-steps{ display:none; }
+.guide-steps.active{ display:flex; flex-direction:column; gap:12px; }
+.guide-step{ display:flex; gap:16px; padding:18px 20px; border-radius:var(--radius-lg); }
+.guide-step .g-num{ width:28px; height:28px; border-radius:50%; background:var(--glass-fill-strong); display:grid; place-items:center; font-size:12px; font-weight:700; flex:0 0 auto; }
+.guide-step .g-body h4{ font-size:14.5px; font-weight:700; margin:0 0 4px; }
+.guide-step .g-body p{ font-size:13px; color:var(--fg-muted); margin:0; line-height:1.5; }
+
+/* Contact page */
+.contact-info-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:48px; }
+.info-card{ padding:22px; text-align:left; }
+.info-card .i-icon{ width:38px; height:38px; border-radius:var(--radius-full); background:rgba(255,255,255,.08); display:grid; place-items:center; margin-bottom:14px; }
+.info-card .i-icon svg{ width:17px; height:17px; }
+.info-card h5{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--fg-faint); margin:0 0 6px; }
+.info-card p, .info-card a{ font-size:14px; font-weight:600; margin:0; word-break:break-word; }
+.social-row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:56px; }
+.social-btn{ display:inline-flex; align-items:center; gap:9px; padding:11px 20px; border-radius:var(--radius-full); background:var(--glass-fill); border:1px solid var(--glass-border); font-weight:700; font-size:13.5px; transition:transform .15s ease, background .15s ease; }
+.social-btn:hover{ transform:translateY(-2px); background:var(--glass-fill-strong); }
+.social-btn svg{ width:16px; height:16px; }
+.form-block{ padding:30px; }
+.form-row{ display:flex; flex-direction:column; gap:6px; margin-bottom:16px; }
+.form-row label{ font-size:12px; font-weight:600; color:var(--fg-faint); }
+.form-row input, .form-row textarea{ padding:12px 16px; border-radius:14px; background:var(--glass-fill-strong); border:1px solid var(--glass-border); color:var(--fg); font-family:var(--font-body); font-size:14.5px; outline:none; resize:vertical; }
+.form-row input:focus, .form-row textarea:focus{ border-color:rgba(255,255,255,.4); }
+.form-actions{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.preview-box{ margin-top:14px; padding:14px 16px; border-radius:14px; background:var(--glass-fill-strong); border:1px solid var(--glass-border); font-size:12.5px; color:var(--fg-muted); white-space:pre-wrap; font-family:ui-monospace,monospace; max-height:220px; overflow-y:auto; }
+.copy-link{ font-size:12px; font-weight:700; color:var(--fg-muted); cursor:pointer; }
+.copy-link:hover{ color:var(--fg); }
+.fallback-note{ font-size:12px; color:var(--fg-faint); margin-top:12px; }
+.two-col{ display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+@media (max-width:760px){ .two-col{ grid-template-columns:1fr; } }
+/* ---- SPA view routing ---- */
+.view{ display:none; }
+.view.active{ display:block; animation:viewFade .25s ease; }
+@keyframes viewFade{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+</style>
+</head>
+<body>
+
+<div class="field"></div>
+<canvas id="botsCanvas"></canvas>
+<canvas id="dotsCanvas"></canvas>
+
+<nav class="nav" id="siteNav"></nav>
+
+<main>
+<section class="view" id="view-home">
+<section class="page-hero">
+    <div class="wrap">
+      <span class="eyebrow-pill" id="heroVersionPill"><span class="dot"></span> Live on 4 platforms</span>
+      <h1>Your day, planned<br><em>in liquid glass.</em></h1>
+      <p class="sub">TaskDue is a task, trip, and calendar planner with a frosted-glass interface, a century-spanning calendar, dedicated trip planning, and reminders that actually work with your device — not against it.</p>
+      <div class="hero-ctas" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:52px">
+        <a class="btn-primary" id="smartDownloadBtn" href="#downloads" onclick="navigateTo('downloads');return false;">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v11m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span id="smartDownloadLabel">Download for your device</span>
+        </a>
+        <a class="btn-ghost" href="#guide" onclick="navigateTo('guide');return false;">See the guide</a>
+      </div>
+      <div style="display:flex;gap:6px;justify-content:center;max-width:560px;margin-inline:auto;padding:6px;border-radius:9999px;background:var(--glass-fill);border:1px solid var(--glass-border);backdrop-filter:blur(var(--blur)) saturate(160%)">
+        <div style="flex:1;padding:14px 8px;text-align:center"><span style="display:block;font-family:var(--font-display);font-size:22px;font-weight:600">4</span><span style="font-size:10.5px;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.06em">Platforms</span></div>
+        <div style="flex:1;padding:14px 8px;text-align:center"><span style="display:block;font-family:var(--font-display);font-size:22px;font-weight:600">0</span><span style="font-size:10.5px;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.06em">Fake sample data</span></div>
+        <div style="flex:1;padding:14px 8px;text-align:center"><span style="display:block;font-family:var(--font-display);font-size:22px;font-weight:600">100</span><span style="font-size:10.5px;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.06em">Yrs calendar range ×2</span></div>
+        <div style="flex:1;padding:14px 8px;text-align:center"><span style="display:block;font-family:var(--font-display);font-size:22px;font-weight:600">2</span><span style="font-size:10.5px;color:var(--fg-faint);text-transform:uppercase;letter-spacing:.06em">Themes, light & dark</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <p class="section-eyebrow">What's inside</p>
+      <h2 class="section-title">Everything a planner needs, nothing it doesn't</h2>
+      <p class="section-sub">Six focused surfaces — no bloat, no feature you'll never open.</p>
+      <div class="feature-grid">
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 11.5 12 4l8 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v9a1 1 0 0 0 1 1h3v-5h4v5h3a1 1 0 0 0 1-1v-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h3>Home checklist</h3>
+          <p>Swipe right to finish, swipe left to bin. Custom categories, priorities, and Day/Week/Month scopes.</p>
+        </div>
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="15" rx="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M4 9.5h16M8 3v3.4M16 3v3.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+          <h3>Calendar, any year</h3>
+          <p>Jump to any month up to a century back or forward. Drag a task onto another day to reschedule it.</p>
+        </div>
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="7" width="18" height="13" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h5A1.5 1.5 0 0 1 16 5.5V7M3 12.5h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+          <h3>Dedicated trip planner</h3>
+          <p>Its own date range and packing checklist, with an option to surface any item as a normal task.</p>
+        </div>
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+          <h3>Real filters</h3>
+          <p>Status, category, priority, timing, and custom date ranges — each explained in plain language.</p>
+        </div>
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M5 19V10M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h3>Honest insights</h3>
+          <p>Completion rate, category load, and streaks — real numbers, no invented "on-time" prediction.</p>
+        </div>
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+          <h3>Light & dark themes</h3>
+          <p>A genuine white-shine light mode, not just an inverted palette — switch anytime in Profile.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="download">
+    <div class="wrap">
+      <p class="section-eyebrow">Get it</p>
+      <h2 class="section-title">One app, four platforms</h2>
+      <p class="section-sub">Every card below is the latest build. Every build opens straight in your browser — install it from there for a real app icon and window.</p>
+      <div class="platform-grid" id="platformGrid"></div>
+      <p style="text-align:center;margin-top:28px"><a class="btn-ghost" href="#downloads" onclick="navigateTo('downloads');return false;">See every previous version →</a></p>
+    </div>
+  </section>
+</section>
+
+<section class="view" id="view-downloads">
+<section class="page-hero">
+    <div class="wrap">
+      <span class="eyebrow-pill"><span class="dot"></span> Every release, every platform</span>
+      <h1>Download <em>any version.</em></h1>
+      <p class="sub">The top entry in each platform is current. Everything below it is kept — pick an older build if that's what you need.</p>
+    </div>
+  </section>
+
+  <section id="all-downloads">
+    <div class="wrap" id="downloadsWrap"></div>
+    <div class="wrap">
+      <div class="glass-card" style="padding:20px 24px;margin-top:8px;display:flex;gap:14px;align-items:flex-start">
+        <div class="i-icon" style="margin:2px 0 0"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2a10 10 0 0 0-3.16 19.5c.5.1.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.46-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .26.18.58.69.48A10 10 0 0 0 12 2Z" fill="currentColor"/></svg></div>
+        <p style="font-size:12.5px;color:var(--fg-muted);line-height:1.6;margin:0">
+          Every entry on this page comes from <code style="background:rgba(255,255,255,.08);padding:2px 6px;border-radius:6px">RELEASES</code> in this file's own code — nothing is added or removed from the live page itself. To ship a new version: commit the build file to the GitHub repo, add a matching entry to <code style="background:rgba(255,255,255,.08);padding:2px 6px;border-radius:6px">RELEASES</code>, and push. There is no upload control here on purpose.
+        </p>
+      </div>
+    </div>
+  </section>
+</section>
+
+<section class="view" id="view-guide">
+<section class="page-hero">
+    <div class="wrap">
+      <span class="eyebrow-pill"><span class="dot"></span> Install + everyday use</span>
+      <h1>Get set up, <em>then get going.</em></h1>
+      <p class="sub">Two parts below: turning the download into a real app on your device, and how to actually use what's inside once it's open.</p>
+    </div>
+  </section>
+
+  <section id="install-guide">
+    <div class="wrap">
+      <p class="section-eyebrow">Part one</p>
+      <h2 class="section-title">Turn it into a real app</h2>
+      <p class="section-sub">Pick your platform. Under a minute, no app store.</p>
+      <div class="guide-tabs" id="guideTabs"></div>
+      <div id="guideStepsWrap"></div>
+    </div>
+  </section>
+
+  <section id="usage-guide">
+    <div class="wrap">
+      <p class="section-eyebrow">Part two</p>
+      <h2 class="section-title">How everything works</h2>
+      <p class="section-sub">The same six surfaces on every platform — only the navigation shape changes (bottom dock on phones, a left sidebar on desktop).</p>
+
+      <div class="feature-grid" style="margin-bottom:20px">
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 11.5 12 4l8 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v9a1 1 0 0 0 1 1h3v-5h4v5h3a1 1 0 0 0 1-1v-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h3>Home</h3>
+          <p>Tap a task to open its detail. Swipe right to mark it done, left to move it to Trash — both show an Undo toast for a few seconds. The round + adds a task; the suitcase icon next to it opens the dedicated trip planner. Category chips filter the list, and the dashed "Custom" chip lets you add, rename, or remove your own categories. Day / Week / Month switches the checklist's time scope, and the sort pill cycles between due date, priority, and category.</p>
+        </div>
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="15" rx="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M4 9.5h16M8 3v3.4M16 3v3.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+          <h3>Calendar</h3>
+          <p>Tap any day to see or add tasks for it. Tap the month name at the top to open a year → month → day picker spanning a century in either direction. On a mouse or trackpad, drag a task from the day list onto a different day in the grid to reschedule it. "Export month (.ics)" downloads a standard calendar file your phone's Calendar app can import.</p>
+        </div>
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="7" width="18" height="13" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h5A1.5 1.5 0 0 1 16 5.5V7M3 12.5h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+          <h3>Trip planner</h3>
+          <p>Set a name, destination, and a single departs/returns date field for each end — tap either date to open the same month picker. The packing checklist arrives pre-loaded and fully editable. Toggle "Add items to your normal task list" to also surface any packing item as its own task on Home, with an optional note.</p>
+        </div>
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+          <h3>Filters</h3>
+          <p>Combine status, category, priority, timing, and an optional custom date range — each with a short explanation right under its label. Apply sends the filtered result straight to Home, with a "Custom filter · Clear" pill to back out.</p>
+        </div>
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M5 19V10M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h3>Insights</h3>
+          <p>A completion ring, a day-by-day bar chart, and a category breakdown for the current week, plus your current and best streaks. Every figure is a real count from your own tasks — nothing here is a forecast or estimate.</p>
+        </div>
+        <div class="feature-card glass-card">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M5 20c1.2-3.6 4-5.4 7-5.4S17.8 16.4 19 20" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+          <h3>Profile</h3>
+          <p>Set your name on first launch (required to enter the app), optionally connect an email, and switch between Dark and Light themes. Notifications, Trash, and Help & support — including replaying this tutorial — all live here too.</p>
+        </div>
+      </div>
+
+      <div class="glass-card" style="padding:26px 28px">
+        <h3 style="font-family:var(--font-display);font-size:19px;font-weight:500;margin:0 0 14px">A note on reminders</h3>
+        <p style="font-size:13.5px;color:var(--fg-muted);line-height:1.6;margin:0 0 10px">Browser reminders (Profile → Notifications) fire while the app is open or recently active. On iPhone/iPad specifically, Safari can't send notifications from a regular browser tab at all — that's an iOS restriction, not a bug. Add TaskDue to your Home Screen first (see the install guide above), and reminders work from the installed app.</p>
+        <p style="font-size:13.5px;color:var(--fg-muted);line-height:1.6;margin:0">Vibration isn't supported by iOS Safari under any circumstances. Everywhere else — Android, Mac, Windows — reminders and vibration work as expected once installed.</p>
+      </div>
+    </div>
+  </section>
+</section>
+
+<section class="view" id="view-contact">
+<section class="page-hero">
+    <div class="wrap">
+      <span class="eyebrow-pill"><span class="dot"></span> Real replies, not a ticket queue</span>
+      <h1>Get in <em>touch.</em></h1>
+      <p class="sub">Questions, feedback, or a bug that needs squashing — reach out.</p>
+    </div>
+  </section>
+
+  <section id="contact-info">
+    <div class="wrap">
+      <div class="contact-info-grid">
+        <div class="info-card glass-card">
+          <div class="i-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4V6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m4 7 8 6 8-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h5>Email</h5>
+          <a href="mailto:rajkamaljadapalli@gmail.com" id="emailLink">rajkamaljadapalli@gmail.com</a>
+        </div>
+        <div class="info-card glass-card">
+          <div class="i-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2a10 10 0 0 0-3.16 19.5c.5.1.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.46-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .26.18.58.69.48A10 10 0 0 0 12 2Z" fill="currentColor"/></svg></div>
+          <h5>GitHub</h5>
+          <a href="https://github.com/Raju-565613" target="_blank" rel="noopener">github.com/Raju-565613</a>
+        </div>
+        <div class="info-card glass-card">
+          <div class="i-icon"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+          <h5>Response time</h5>
+          <p>Usually within a couple of days.</p>
+        </div>
+      </div>
+
+      <!--
+        Social links: only GitHub could be confirmed for this project (given directly).
+        Add more by copying a social-btn block below — same pattern, new href/label/icon.
+      -->
+      <div class="social-row">
+        <a class="social-btn glass-card" href="https://github.com/Raju-565613" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 2a10 10 0 0 0-3.16 19.5c.5.1.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.46-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .26.18.58.69.48A10 10 0 0 0 12 2Z" fill="currentColor"/></svg>
+          GitHub
+        </a>
+        <a class="social-btn glass-card" href="mailto:rajkamaljadapalli@gmail.com">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4V6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m4 7 8 6 8-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Email
+        </a>
+      </div>
+
+      <div class="two-col">
+        <div class="glass-card form-block">
+          <h3 style="font-family:var(--font-display);font-size:19px;font-weight:500;margin:0 0 18px">Send a message</h3>
+          <div class="form-row"><label for="cName">Name</label><input id="cName" type="text" placeholder="Your name"></div>
+          <div class="form-row"><label for="cEmail">Email</label><input id="cEmail" type="email" placeholder="you@email.com"></div>
+          <div class="form-row"><label for="cMessage">Message</label><textarea id="cMessage" rows="5" placeholder="What's on your mind?"></textarea></div>
+          <div class="form-actions">
+            <button class="btn-primary" onclick="prepareMessage()">Send message</button>
+            <span class="copy-link" onclick="copyBox('msgPreview')">Copy</span>
+          </div>
+          <div class="preview-box" id="msgPreview" style="display:none"></div>
+          <p class="fallback-note">Opens your email app with this filled in — <a href="#" onclick="sendMessageFallback();return false;" style="font-weight:700;color:var(--fg)">send by email instead</a> if that doesn't work.</p>
+        </div>
+
+        <div class="glass-card form-block">
+          <h3 style="font-family:var(--font-display);font-size:19px;font-weight:500;margin:0 0 6px">Found a bug?</h3>
+          <p style="font-size:12.5px;color:var(--fg-faint);margin:0 0 18px">Send it straight to GitHub, or email it — either way the report stays visible below so you can copy it.</p>
+          <div class="form-row"><label for="bSummary">Short summary</label><input id="bSummary" type="text" placeholder="e.g. Calendar picker won't close on iPhone"></div>
+          <div class="form-row"><label for="bDetails">What happened / steps to reproduce</label><textarea id="bDetails" rows="5" placeholder="What you did, what you expected, what happened instead"></textarea></div>
+          <div class="form-actions">
+            <button class="btn-primary" onclick="prepareReport()">Prepare report</button>
+            <span class="copy-link" onclick="copyBox('reportPreview')">Copy</span>
+          </div>
+          <div class="preview-box" id="reportPreview" style="display:none"></div>
+          <p class="fallback-note">
+            <a href="#" onclick="openIssueFallback();return false;" style="font-weight:700;color:var(--fg)">Open a GitHub issue instead</a>
+            — or <a href="#" onclick="emailReportFallback();return false;" style="font-weight:700;color:var(--fg)">email this report</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+</section>
+</main>
+
+<footer><div id="siteFooter"></div></footer>
+
+<script>
+/* ============================================================
+   TASKDUE SITE — shared data & behavior across every page.
+   Edit RELEASES when you ship a new version of any platform.
+   Newest entry goes first in each platform's `versions` array —
+   Home always shows versions[0]; Downloads shows the full list.
+   ============================================================ */
+const RELEASES = {
+  windows: {
+    label: 'Windows', color: '#8ecae6',
+    sub: 'Desktop package — no browser install step',
+    versions: [
+      { version: '1.4.3', date: 'August 22, 2026',
+        notes: 'Packaged as a real desktop app: TaskDue.bat opens in a clean app-mode window with no browser chrome. Left sidebar navigation, light/dark themes.',
+        fileUrl: 'TaskDue-Windows.zip', fileName: 'TaskDue-Windows.zip' }
+    ]
+  },
+  mac: {
+    label: 'Mac', color: '#c792ea',
+    sub: 'A real .app bundle with its own icon',
+    versions: [
+      { version: '1.4.3', date: 'August 22, 2026',
+        notes: 'Ships as TaskDue.app — double-click to open in a clean app-mode window, no browser chrome. Left sidebar navigation, light/dark themes.',
+        fileUrl: 'TaskDue-Mac.zip', fileName: 'TaskDue-Mac.zip' }
+    ]
+  },
+  android: {
+    label: 'Android', color: '#73c892',
+    sub: 'Bottom dock, built for touch',
+    versions: [
+      { version: '1.4.3', date: 'August 22, 2026',
+        notes: 'Opens in Chrome — add to your Home Screen for a full-screen, installed-app experience.',
+        fileUrl: 'taskdue-android.html', fileName: 'taskdue-android.html' }
+    ]
+  },
+  iphone: {
+    label: 'iPhone / iPad', color: '#e8ad6a',
+    sub: 'Bottom dock, built for touch',
+    versions: [
+      { version: '1.4.3', date: 'August 22, 2026',
+        notes: 'Opens in Safari — add to your Home Screen for a full-screen, installed-app experience and working reminders.',
+        fileUrl: 'taskdue-iphone.html', fileName: 'taskdue-iphone.html' }
+    ]
+  }
+};
+
+const PLATFORM_ICONS = {
+  windows: '<svg viewBox="0 0 24 24" fill="none"><path d="M3 5.5 11 4.3v7.4H3V5.5Zm0 13L11 19.7v-7.1H3v6ZM12.2 4.1 21 3v8.6h-8.8V4.1Zm0 8.5H21V21l-8.8-1.2v-7.2Z" fill="currentColor"/></svg>',
+  mac: '<svg viewBox="0 0 24 24" fill="none"><path d="M16.5 12.6c0-2.1 1.7-3.1 1.8-3.2-1-1.4-2.5-1.6-3-1.6-1.3-.1-2.5.7-3.2.7-.6 0-1.7-.7-2.8-.7-1.4 0-2.8.8-3.5 2.1-1.5 2.6-.4 6.4 1.1 8.5.7 1 1.6 2.2 2.7 2.1 1.1 0 1.5-.7 2.8-.7s1.7.7 2.8.7c1.2 0 1.9-1 2.6-2 .8-1.2 1.2-2.3 1.2-2.4-.1 0-2.5-1-2.5-3.5Z" fill="currentColor"/><path d="M14.8 6.1c.6-.7 1-1.7.9-2.6-.9.1-1.9.6-2.5 1.3-.5.6-1 1.6-.9 2.5.9.1 1.9-.4 2.5-1.2Z" fill="currentColor"/></svg>',
+  android: '<svg viewBox="0 0 24 24" fill="none"><path d="M6.5 9.5v6M17.5 9.5v6M8.2 9.5h7.6v7a1 1 0 0 1-1 1H9.2a1 1 0 0 1-1-1v-7Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="m8.5 6.5 1-1.7M15.5 6.5l-1-1.7M9 6.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10.3" cy="7.6" r=".6" fill="currentColor"/><circle cx="13.7" cy="7.6" r=".6" fill="currentColor"/></svg>',
+  iphone: '<svg viewBox="0 0 24 24" fill="none"><rect x="7" y="2.5" width="10" height="19" rx="2.2" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 19h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
+};
+
+const SITE_CONTACT = {
+  email: 'rajkamaljadapalli@gmail.com',
+  github: 'https://github.com/Raju-565613',
+  githubLabel: 'github.com/Raju-565613',
+  instagram: 'https://www.instagram.com/raj_kamal__r.j/?hl=en',
+  x: 'https://x.com/Rajkama_j',
+  linkedin: 'https://in.linkedin.com/in/raj-kamal-jadapalli-56b7a5298'
+};
+
+function escapeHTML(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function latestOf(key){ return RELEASES[key].versions[0] || null; }
+
+/* ---- Shared nav + footer, generated from one place so every page stays in sync ---- */
+const NAV_LINKS = [
+  { href:'#home', label:'Home' },
+  { href:'#downloads', label:'Downloads' },
+  { href:'#guide', label:'Guide' },
+  { href:'#contact', label:'Contact' }
+];
+function renderNav(activeHash){
+  const el = document.getElementById('siteNav');
+  if(!el) return;
+  el.innerHTML =
+    '<div class="nav-inner">'
+    + '<a class="brand" href="#home" onclick="navigateTo(\'home\');return false;"><span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#0e1112" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>TaskDue</a>'
+    + '<div class="nav-links" id="navLinks">'
+    + NAV_LINKS.map(l=>'<a href="'+l.href+'" onclick="navigateTo(\''+l.href.replace('#','')+'\');return false;" class="'+(l.href===activeHash?'active':'')+'">'+l.label+'</a>').join('')
+    + '</div>'
+    + '<a class="nav-cta" href="#downloads" onclick="navigateTo(\'downloads\');return false;">Get the app</a>'
+    + '</div>';
+  initMagneticNav();
+}
+function renderFooter(){
+  const el = document.getElementById('siteFooter');
+  if(!el) return;
+  const year = new Date().getFullYear();
+  el.innerHTML =
+    '<div class="wrap">'
+    + '<div class="footer-grid">'
+    + '<div class="footer-brand"><div class="brand" style="pointer-events:none"><span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#0e1112" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>TaskDue</div></div>'
+    + '<div class="footer-links">'
+    + '<div><h5>Product</h5><a href="#home" onclick="navigateTo(\'home\');return false;">Home</a><a href="#downloads" onclick="navigateTo(\'downloads\');return false;">Downloads</a><a href="#guide" onclick="navigateTo(\'guide\');return false;">Guide</a></div>'
+    + '<div><h5>Project</h5><a href="#contact" onclick="navigateTo(\'contact\');return false;">Contact</a><a href="'+SITE_CONTACT.github+'" target="_blank" rel="noopener">GitHub</a></div>'
+    + '</div></div>'
+    + '<div class="footer-bottom-row">'
+    + '<div class="footer-bottom">© '+year+' TaskDue.</div>'
+    + '<div class="footer-social">'
+    + '<a href="'+SITE_CONTACT.github+'" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2a10 10 0 0 0-3.16 19.5c.5.1.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.46-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .26.18.58.69.48A10 10 0 0 0 12 2Z" fill="currentColor"/></svg></a>'
+    + '<a href="'+SITE_CONTACT.instagram+'" target="_blank" rel="noopener" aria-label="Instagram" title="Instagram"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.7"/><circle cx="17.2" cy="6.8" r="1.1" fill="currentColor"/></svg></a>'
+    + '<a href="'+SITE_CONTACT.x+'" target="_blank" rel="noopener" aria-label="X" title="X"><svg viewBox="0 0 24 24" fill="none"><path d="M4 4l16 16M20 4 4 20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></a>'
+    + '<a href="'+SITE_CONTACT.linkedin+'" target="_blank" rel="noopener" aria-label="LinkedIn" title="LinkedIn"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M7.5 10.5v6M7.5 7.8v.01M11.5 16.5v-3.5c0-1.4 1-2.5 2.3-2.5s2.2 1 2.2 2.5v3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>'
+    + '</div></div>'
+    + '</div>';
+}
+
+/* ============================================================
+   Background "bots" — soft glowing blobs that drift, and glide
+   away from the pointer (mouse or touch) when it gets near.
+   ============================================================ */
+function initBots(){
+  const canvas = document.getElementById('botsCanvas');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let w, h, dpr;
+  const colors = ['rgba(217,217,217,', 'rgba(115,200,146,', 'rgba(232,173,106,', 'rgba(142,202,230,', 'rgba(199,146,234,'];
+  const COUNT = window.matchMedia('(max-width:700px)').matches ? 10 : 18;
+  let bots = [];
+  const pointer = { x:-9999, y:-9999, active:false };
+
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio||1, 2);
+    w = window.innerWidth; h = window.innerHeight;
+    canvas.width = w*dpr; canvas.height = h*dpr;
+    canvas.style.width = w+'px'; canvas.style.height = h+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  function makeBot(i){
+    return {
+      x: Math.random()*w, y: Math.random()*h,
+      vx: (Math.random()-0.5)*0.18, vy: (Math.random()-0.5)*0.18,
+      r: 40 + Math.random()*70,
+      color: colors[i % colors.length],
+      alpha: 0.10 + Math.random()*0.10
+    };
+  }
+  function init(){
+    resize();
+    bots = Array.from({length:COUNT}, (_,i)=>makeBot(i));
+  }
+  function step(){
+    ctx.clearRect(0,0,w,h);
+    bots.forEach(b=>{
+      // gentle drift
+      b.x += b.vx; b.y += b.vy;
+      // repel from pointer
+      if(pointer.active){
+        const dx = b.x - pointer.x, dy = b.y - pointer.y;
+        const dist = Math.hypot(dx,dy);
+        const REPEL_RADIUS = 220;
+        if(dist < REPEL_RADIUS && dist > 0.1){
+          const force = (1 - dist/REPEL_RADIUS) * 2.6;
+          b.x += (dx/dist) * force;
+          b.y += (dy/dist) * force;
+        }
+      }
+      // wrap around edges softly
+      if(b.x < -b.r) b.x = w+b.r; if(b.x > w+b.r) b.x = -b.r;
+      if(b.y < -b.r) b.y = h+b.r; if(b.y > h+b.r) b.y = -b.r;
+      // draw glow
+      const grad = ctx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r);
+      grad.addColorStop(0, b.color+b.alpha+')');
+      grad.addColorStop(1, b.color+'0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
+    });
+    requestAnimationFrame(step);
+  }
+  function setPointer(x,y){ pointer.x=x; pointer.y=y; pointer.active=true; }
+  function clearPointer(){ pointer.active=false; }
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('mousemove', e=>setPointer(e.clientX, e.clientY));
+  window.addEventListener('mouseleave', clearPointer);
+  window.addEventListener('touchmove', e=>{ if(e.touches[0]) setPointer(e.touches[0].clientX, e.touches[0].clientY); }, {passive:true});
+  window.addEventListener('touchend', clearPointer);
+
+  init();
+  requestAnimationFrame(step);
+}
+
+/* ============================================================
+   Dot grid — tiny white dots (0.5mm) spaced 1mm apart, doubling
+   in size as the pointer approaches and settling back to normal
+   by 5mm away. Rendered as: a pre-baked base layer (cheap to
+   blit every frame) plus a small local overdraw of only the
+   handful of dots actually near the pointer (cheap to compute),
+   rather than recalculating tens of thousands of dots per frame.
+   ============================================================ */
+function initDots(){
+  const canvas = document.getElementById('dotsCanvas');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const MM = 96/25.4; // CSS reference px per mm
+  const DOT_R = 0.25 * MM;      // 0.5mm diameter -> 0.25mm radius
+  const PITCH = 10 * MM;           // 1cm center-to-center spacing
+  const EFFECT_RADIUS = 2.5 * PITCH; // back to normal size by 2.5 dot-spacings away (2.5cm)
+  let w, h, dpr, cols, rows;
+  let base = document.createElement('canvas');
+  let baseCtx = base.getContext('2d');
+  const pointer = { x:-9999, y:-9999, active:false };
+
+  function paintBase(){
+    baseCtx.clearRect(0,0,w,h);
+    baseCtx.fillStyle = 'rgba(255,255,255,0.10)';
+    for(let r=0; r<rows; r++){
+      for(let c=0; c<cols; c++){
+        const x = c*PITCH, y = r*PITCH;
+        baseCtx.beginPath(); baseCtx.arc(x,y,DOT_R,0,Math.PI*2); baseCtx.fill();
+      }
+    }
+  }
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio||1, 2);
+    w = window.innerWidth; h = window.innerHeight;
+    canvas.width = w*dpr; canvas.height = h*dpr;
+    canvas.style.width = w+'px'; canvas.style.height = h+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    base.width = w*dpr; base.height = h*dpr;
+    base.style.width = w+'px'; base.style.height = h+'px';
+    baseCtx.setTransform(dpr,0,0,dpr,0,0);
+    cols = Math.ceil(w/PITCH)+1; rows = Math.ceil(h/PITCH)+1;
+    paintBase();
+    draw();
+  }
+  function draw(){
+    ctx.clearRect(0,0,w,h);
+    ctx.drawImage(base, 0, 0, w, h);
+    if(!pointer.active) return;
+    // Only touch the small neighborhood of dots actually within reach of the pointer.
+    const minCol = Math.max(0, Math.floor((pointer.x - EFFECT_RADIUS)/PITCH));
+    const maxCol = Math.min(cols-1, Math.ceil((pointer.x + EFFECT_RADIUS)/PITCH));
+    const minRow = Math.max(0, Math.floor((pointer.y - EFFECT_RADIUS)/PITCH));
+    const maxRow = Math.min(rows-1, Math.ceil((pointer.y + EFFECT_RADIUS)/PITCH));
+    const PULL = 0.35; // how far the nearest dots drift toward the cursor, as a fraction of their distance to it
+    for(let r=minRow; r<=maxRow; r++){
+      for(let c=minCol; c<=maxCol; c++){
+        const gx = c*PITCH, gy = r*PITCH;
+        const dist = Math.hypot(gx-pointer.x, gy-pointer.y);
+        if(dist >= EFFECT_RADIUS) continue;
+        const t = 1 - dist/EFFECT_RADIUS; // 1 right at the cursor, 0 at the edge of reach
+        const scale = 1 + t;              // up to 2x size right at the cursor
+        const opacity = 0.10 + t*0.80;    // dim baseline brightening up to nearly full near the cursor
+        // pull the nearest dots gently toward the pointer instead of leaving them pinned to the grid
+        const x = gx + (pointer.x - gx) * t * PULL;
+        const y = gy + (pointer.y - gy) * t * PULL;
+        ctx.fillStyle = 'rgba(255,255,255,'+opacity.toFixed(3)+')';
+        ctx.beginPath(); ctx.arc(x, y, DOT_R*scale, 0, Math.PI*2); ctx.fill();
+      }
+    }
+  }
+  function setPointer(x,y){ pointer.x=x; pointer.y=y; pointer.active=true; draw(); }
+  function clearPointer(){ pointer.active=false; draw(); }
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('mousemove', e=>setPointer(e.clientX, e.clientY));
+  window.addEventListener('mouseleave', clearPointer);
+  window.addEventListener('touchmove', e=>{ if(e.touches[0]) setPointer(e.touches[0].clientX, e.touches[0].clientY); }, {passive:true});
+  window.addEventListener('touchend', clearPointer);
+
+  resize();
+}
+
+/* ============================================================
+   Scroll reveal — cards drift and glow into place as you scroll
+   toward them, and settle back down as you scroll away. Uses
+   IntersectionObserver without unobserving, so it re-triggers
+   both directions rather than firing once and stopping.
+   ============================================================ */
+let scrollObserver = null;
+function initScrollReveal(){
+  if(!scrollObserver && 'IntersectionObserver' in window){
+    scrollObserver = new IntersectionObserver((entries)=>{
+      entries.forEach(entry=>{
+        entry.target.classList.toggle('in-view', entry.isIntersecting);
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -8% 0px' });
+  }
+  const selector = '.glass-card, .page-hero h1, .page-hero .sub, .page-hero .eyebrow-pill';
+  const parentCounts = new WeakMap();
+  document.querySelectorAll(selector).forEach(el=>{
+    if(el.classList.contains('reveal')) return; // already wired up — dynamic re-renders shouldn't double-observe
+    el.classList.add('reveal');
+    const parent = el.parentElement;
+    const idx = parentCounts.get(parent) || 0;
+    parentCounts.set(parent, idx+1);
+    el.style.setProperty('--reveal-delay', Math.min(idx*0.09, 0.5)+'s');
+    if(scrollObserver) scrollObserver.observe(el);
+    else el.classList.add('in-view'); // no IntersectionObserver support — just show it
+  });
+}
+
+/* ============================================================
+   Magnetic nav — nav items gather closer together and glow
+   as the pointer approaches, and relax back when it leaves.
+   ============================================================ */
+function initMagneticNav(){
+  const container = document.getElementById('navLinks');
+  if(!container) return;
+  const items = () => Array.from(container.querySelectorAll('a'));
+
+  container.addEventListener('mousemove', e=>{
+    const rect = container.getBoundingClientRect();
+    const cx = e.clientX;
+    items().forEach(a=>{
+      const r = a.getBoundingClientRect();
+      const centerX = r.left + r.width/2;
+      const dist = Math.abs(cx - centerX);
+      const RADIUS = 120;
+      if(dist < RADIUS){
+        const pull = (1 - dist/RADIUS);
+        const dir = centerX > cx ? -1 : 1;
+        const shift = dir * pull * 10;
+        const scale = 1 + pull*0.08;
+        a.style.transform = 'translateX('+shift+'px) scale('+scale+')';
+        a.style.textShadow = '0 0 '+(pull*14)+'px rgba(255,255,255,'+(pull*0.6)+')';
+      } else {
+        a.style.transform = ''; a.style.textShadow = '';
+      }
+    });
+  });
+  container.addEventListener('mouseleave', ()=>{
+    items().forEach(a=>{ a.style.transform=''; a.style.textShadow=''; });
+  });
+}
+
+/* ===== Home ===== */
+function dlAttr(fileName){
+  // .zip packages must be saved, not opened. .html builds must actually load in the
+  // browser tab so mobile visitors can use "Add to Home Screen" from the real page.
+  return /\.zip$/i.test(fileName||'') ? ' download="'+escapeHTML(fileName)+'"' : '';
+}
+function currentLatestVersion(){
+  const versions = Object.values(RELEASES).map(r=>r.versions[0]).filter(Boolean);
+  if(!versions.length) return null;
+  // newest by date across all platforms
+  return versions.slice().sort((a,b)=> new Date(b.date) - new Date(a.date))[0].version;
+}
+function renderLatestGrid(){
+  const pill = document.getElementById('heroVersionPill');
+  if(pill){
+    const v = currentLatestVersion();
+    pill.innerHTML = '<span class="dot"></span> ' + (v ? 'v'+escapeHTML(v)+' — live on 4 platforms' : 'Live on 4 platforms');
+  }
+  const el = document.getElementById('platformGrid');
+  const withBuilds = Object.entries(RELEASES).filter(([key,r])=>r.versions.length>0);
+  if(!withBuilds.length){
+    el.innerHTML = '<div class="glass-card" style="padding:40px;text-align:center;grid-column:1/-1">'
+      + '<p style="font-size:14px;color:var(--fg-muted);margin:0 0 6px">No builds published yet.</p>'
+      + '<p style="font-size:12.5px;color:var(--fg-faint);margin:0">Add one from <a href="#downloads" onclick="navigateTo(\'downloads\');return false;" style="color:var(--fg);font-weight:700">Downloads</a>.</p></div>';
+    return;
+  }
+  el.innerHTML = withBuilds.map(([key, r])=>{
+    const latest = latestOf(key);
+    return '<div class="platform-card glass-card">'
+      + '<div class="p-icon">'+PLATFORM_ICONS[key]+'</div>'
+      + '<h3>'+escapeHTML(r.label)+'</h3>'
+      + '<p class="p-sub">'+escapeHTML(r.sub)+'</p>'
+      + '<p class="p-version"><span class="vtag">v'+escapeHTML(latest.version)+'</span> Updated '+escapeHTML(latest.date)+'</p>'
+      + '<a class="p-download" href="'+latest.fileUrl+'"'+dlAttr(latest.fileName)+'>Download for '+escapeHTML(r.label)+'</a>'
+      + '</div>';
+  }).join('');
+}
+function detectPlatform(){
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  if(isIOS) return 'iphone';
+  if(/Android/.test(ua)) return 'android';
+  if(/Macintosh/.test(ua)) return 'mac';
+  if(/Windows/.test(ua)) return 'windows';
+  return null;
+}
+function setSmartDownload(){
+  const plat = detectPlatform();
+  const btn = document.getElementById('smartDownloadBtn');
+  const label = document.getElementById('smartDownloadLabel');
+  const latest = plat ? latestOf(plat) : null;
+  if(plat && latest){
+    btn.setAttribute('href', latest.fileUrl);
+    if(/\.zip$/i.test(latest.fileName||'')) btn.setAttribute('download', latest.fileName);
+    else btn.removeAttribute('download');
+    btn.removeAttribute('onclick');
+    label.textContent = 'Download for '+RELEASES[plat].label;
+  }
+}
+
+/* ===== Downloads ===== */
+function renderDownloads(){
+  const el = document.getElementById('downloadsWrap');
+  el.innerHTML = Object.entries(RELEASES).map(([key, r])=>
+    '<div class="glass-card" style="padding:28px 24px;margin-bottom:20px">'
+    + '<div class="platform-section-head"><div class="p-icon">'+PLATFORM_ICONS[key]+'</div><h3>'+escapeHTML(r.label)+'</h3></div>'
+    + '<div class="version-list">'
+    + (r.versions.length ? r.versions.map((v,i)=>
+        '<div class="version-row '+(i===0?'latest':'')+'">'
+        + '<span class="v-badge">'+(i===0?'Latest':'Older')+'</span>'
+        + '<div class="v-body"><div class="v-head"><span class="v-num">v'+escapeHTML(v.version)+'</span><span class="v-date">'+escapeHTML(v.date)+'</span></div><p>'+escapeHTML(v.notes)+'</p></div>'
+        + '<a class="v-dl" href="'+v.fileUrl+'"'+dlAttr(v.fileName)+'>Download</a>'
+        + '</div>'
+      ).join('') : '<p style="font-size:13px;color:var(--fg-faint);margin:4px 0 0">No builds uploaded for '+escapeHTML(r.label)+' yet.</p>')
+    + '</div></div>'
+  ).join('');
+}
+
+/* ===== Guide ===== */
+let activeGuide = 'windows';
+function renderGuide(){
+  const tabs = document.getElementById('guideTabs');
+  tabs.innerHTML = Object.entries(RELEASES).map(([key,r])=>
+    '<div class="guide-tab '+(key===activeGuide?'active':'')+'" onclick="setGuide(\''+key+'\')">'+escapeHTML(r.label)+'</div>'
+  ).join('');
+  const GUIDE_STEPS = {
+    windows: [
+      { title:'Open the app', body:'Download below — it opens TaskDue right in your browser, nothing to unzip.' },
+      { title:'Install it', body:'Click the install icon in the address bar, or the ⋮ menu → "Install TaskDue".' },
+      { title:'Use it like any app', body:'It opens in its own window from your Start Menu or taskbar from now on.' }
+    ],
+    mac: [
+      { title:'Open the app', body:'Download below — it opens TaskDue in Safari or Chrome.' },
+      { title:'Install it', body:'Safari: File → Add to Dock. Chrome/Edge: install icon in the address bar.' },
+      { title:'Use it like any app', body:'Launch it from your Dock or Applications folder from now on.' }
+    ],
+    android: [
+      { title:'Open the app', body:'Download below — it opens TaskDue right in Chrome.' },
+      { title:'Add to Home Screen', body:'Tap the ⋮ menu → "Add to Home screen" or "Install app".' },
+      { title:'Use it like any app', body:'It launches full-screen from your home screen, no browser bar.' }
+    ],
+    iphone: [
+      { title:'Open the app', body:'Download below — it opens TaskDue right in Safari.' },
+      { title:'Add to Home Screen', body:'Tap Share (the square with an arrow), then "Add to Home Screen".' },
+      { title:'Use it like any app', body:'It launches full-screen from your home screen. Install this way for reminders to work — Safari tabs can\u2019t send them.' }
+    ]
+  };
+  const wrap = document.getElementById('guideStepsWrap');
+  wrap.innerHTML = Object.entries(RELEASES).map(([key,r])=>
+    '<div class="guide-steps '+(key===activeGuide?'active':'')+'" id="guide-'+key+'">'
+    + GUIDE_STEPS[key].map((g,i)=>'<div class="guide-step glass-card"><div class="g-num">'+(i+1)+'</div><div class="g-body"><h4>'+escapeHTML(g.title)+'</h4><p>'+escapeHTML(g.body)+'</p></div></div>').join('')
+    + '<a class="btn-primary" style="margin-top:6px" href="'+latestOf(key).file+'">Download for '+escapeHTML(r.label)+'</a>'
+    + '</div>'
+  ).join('');
+}
+function setGuide(key){ activeGuide = key; renderGuide(); }
+
+/* ===== Contact ===== */
+// Edit this if/when a dedicated GitHub repo (separate from the profile) exists for issue-filing.
+const REPO_ISSUES_URL = 'https://github.com/Raju-565613';
+
+function copyBox(id){
+  const el = document.getElementById(id);
+  if(!el || el.style.display==='none') return;
+  navigator.clipboard.writeText(el.textContent).catch(()=>{});
+}
+function prepareMessage(){
+  const name = document.getElementById('cName').value.trim() || '(no name given)';
+  const email = document.getElementById('cEmail').value.trim() || '(no email given)';
+  const message = document.getElementById('cMessage').value.trim() || '(empty message)';
+  const text = 'From: '+name+' <'+email+'>\n\n'+message;
+  const box = document.getElementById('msgPreview');
+  box.textContent = text; box.style.display = 'block';
+  const subject = encodeURIComponent('Message from '+name+' — TaskDue');
+  const body = encodeURIComponent(text);
+  window.location.href = 'mailto:rajkamaljadapalli@gmail.com?subject='+subject+'&body='+body;
+}
+function sendMessageFallback(){
+  const box = document.getElementById('msgPreview');
+  const text = box.style.display!=='none' ? box.textContent : 'Hi — ';
+  window.location.href = 'mailto:rajkamaljadapalli@gmail.com?subject='+encodeURIComponent('Message — TaskDue')+'&body='+encodeURIComponent(text);
+}
+function prepareReport(){
+  const summary = document.getElementById('bSummary').value.trim() || '(no summary given)';
+  const details = document.getElementById('bDetails').value.trim() || '(no details given)';
+  const text = 'Summary: '+summary+'\n\nWhat happened / steps to reproduce:\n'+details+'\n\n— filed via TaskDue contact page';
+  const box = document.getElementById('reportPreview');
+  box.textContent = text; box.style.display = 'block';
+}
+function openIssueFallback(){
+  const box = document.getElementById('reportPreview');
+  if(box.style.display==='none') prepareReport();
+  window.open(REPO_ISSUES_URL, '_blank', 'noopener');
+}
+function emailReportFallback(){
+  const box = document.getElementById('reportPreview');
+  if(box.style.display==='none') prepareReport();
+  const text = box.textContent;
+  window.location.href = 'mailto:rajkamaljadapalli@gmail.com?subject='+encodeURIComponent('Bug report — TaskDue')+'&body='+encodeURIComponent(text);
+}
+
+/* ---- Hash-based router — connects all four views into one file ---- */
+function showView(){
+  const name = (location.hash || '#home').replace('#','') || 'home';
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+name));
+  renderNav('#'+name);
+  window.scrollTo({top:0});
+  if(name==='home'){ renderLatestGrid(); setSmartDownload(); }
+  else if(name==='downloads'){ renderDownloads(); }
+  else if(name==='guide'){ renderGuide(); }
+  initScrollReveal();
+}
+function navigateTo(name){
+  // If the hash is already what we want (e.g. clicking the active tab again),
+  // hashchange won't fire on its own — call showView directly as a fallback.
+  if(location.hash === '#'+name){ showView(); }
+  else { location.hash = '#'+name; }
+}
+window.addEventListener('hashchange', showView);
+document.addEventListener('DOMContentLoaded', ()=>{
+  renderFooter();
+  initBots();
+  initDots();
+  showView();
+});
+</script>
+</body>
+</html>
