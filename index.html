@@ -802,6 +802,9 @@ function dlAttr(fileName){
   // browser tab so mobile visitors can use "Add to Home Screen" from the real page.
   return /\.zip$/i.test(fileName||'') ? ' download="'+escapeHTML(fileName)+'"' : '';
 }
+function actionLabel(fileName){
+  return /\.zip$/i.test(fileName||'') ? 'Download' : 'Open';
+}
 function currentLatestVersion(){
   const versions = Object.values(RELEASES).map(r=>r.versions[0]).filter(Boolean);
   if(!versions.length) return null;
@@ -829,7 +832,7 @@ function renderLatestGrid(){
       + '<h3>'+escapeHTML(r.label)+'</h3>'
       + '<p class="p-sub">'+escapeHTML(r.sub)+'</p>'
       + '<p class="p-version"><span class="vtag">v'+escapeHTML(latest.version)+'</span> Updated '+escapeHTML(latest.date)+'</p>'
-      + '<a class="p-download" href="'+latest.fileUrl+'"'+dlAttr(latest.fileName)+'>Download for '+escapeHTML(r.label)+'</a>'
+      + '<a class="p-download" href="'+latest.fileUrl+'"'+dlAttr(latest.fileName)+'>'+actionLabel(latest.fileName)+' for '+escapeHTML(r.label)+'</a>'
       + '</div>';
   }).join('');
 }
@@ -852,7 +855,7 @@ function setSmartDownload(){
     if(/\.zip$/i.test(latest.fileName||'')) btn.setAttribute('download', latest.fileName);
     else btn.removeAttribute('download');
     btn.removeAttribute('onclick');
-    label.textContent = 'Download for '+RELEASES[plat].label;
+    label.textContent = actionLabel(latest.fileName)+' for '+RELEASES[plat].label;
   }
 }
 
@@ -867,7 +870,7 @@ function renderDownloads(){
         '<div class="version-row '+(i===0?'latest':'')+'">'
         + '<span class="v-badge">'+(i===0?'Latest':'Older')+'</span>'
         + '<div class="v-body"><div class="v-head"><span class="v-num">v'+escapeHTML(v.version)+'</span><span class="v-date">'+escapeHTML(v.date)+'</span></div><p>'+escapeHTML(v.notes)+'</p></div>'
-        + '<a class="v-dl" href="'+v.fileUrl+'"'+dlAttr(v.fileName)+'>Download</a>'
+        + '<a class="v-dl" href="'+v.fileUrl+'"'+dlAttr(v.fileName)+'>'+actionLabel(v.fileName)+'</a>'
         + '</div>'
       ).join('') : '<p style="font-size:13px;color:var(--fg-faint);margin:4px 0 0">No builds uploaded for '+escapeHTML(r.label)+' yet.</p>')
     + '</div></div>'
@@ -904,12 +907,16 @@ function renderGuide(){
     ]
   };
   const wrap = document.getElementById('guideStepsWrap');
-  wrap.innerHTML = Object.entries(RELEASES).map(([key,r])=>
-    '<div class="guide-steps '+(key===activeGuide?'active':'')+'" id="guide-'+key+'">'
-    + GUIDE_STEPS[key].map((g,i)=>'<div class="guide-step glass-card"><div class="g-num">'+(i+1)+'</div><div class="g-body"><h4>'+escapeHTML(g.title)+'</h4><p>'+escapeHTML(g.body)+'</p></div></div>').join('')
-    + '<a class="btn-primary" style="margin-top:6px" href="'+latestOf(key).file+'">Download for '+escapeHTML(r.label)+'</a>'
-    + '</div>'
-  ).join('');
+  wrap.innerHTML = Object.entries(RELEASES).map(([key,r])=>{
+    const latest = latestOf(key);
+    const dlBtn = latest
+      ? '<a class="btn-primary" style="margin-top:6px" href="'+latest.fileUrl+'"'+dlAttr(latest.fileName)+'>'+actionLabel(latest.fileName)+' for '+escapeHTML(r.label)+'</a>'
+      : '<p style="font-size:12.5px;color:var(--fg-faint);margin-top:6px">No build published for '+escapeHTML(r.label)+' yet — see Downloads.</p>';
+    return '<div class="guide-steps '+(key===activeGuide?'active':'')+'" id="guide-'+key+'">'
+      + GUIDE_STEPS[key].map((g,i)=>'<div class="guide-step glass-card"><div class="g-num">'+(i+1)+'</div><div class="g-body"><h4>'+escapeHTML(g.title)+'</h4><p>'+escapeHTML(g.body)+'</p></div></div>').join('')
+      + dlBtn
+      + '</div>';
+  }).join('');
 }
 function setGuide(key){ activeGuide = key; renderGuide(); }
 
